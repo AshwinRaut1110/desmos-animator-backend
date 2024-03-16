@@ -9,8 +9,8 @@ const Path = require("path");
 const app = express();
 app.use(cors());
 
-// setting up the storage destination and filenames and extentions
-const storage = multer.diskStorage({
+// setting up the storage destination and filenames and extentions for videos
+const storageVideo = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, Path.join(__dirname, "../videos/"));
   },
@@ -19,11 +19,25 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage });
+const uploadVideo = multer({ storage: storageVideo });
+
+// setting up the image destination folder, and name and extentions for image
+const storageImage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    const imageFolder = Path.join(__dirname, "../images");
+    cb(null, imageFolder);
+  },
+  filename: function (req, file, cb) {
+    const imageName = file.originalname;
+    cb(null, imageName);
+  },
+});
+
+const uploadImage = multer({ storage: storageImage });
 
 const PORT = 3000;
 
-app.post("/convertVideo", upload.single("video"), async (req, res) => {
+app.post("/convertVideo", uploadVideo.single("video"), async (req, res) => {
   // extracting the video name and extension
   const [videoName, videoExtension] = req.file.originalname.split(".");
 
@@ -34,35 +48,51 @@ app.post("/convertVideo", upload.single("video"), async (req, res) => {
 
   try {
     // create the frames folder for the video
-    fs.mkdirSync(`../videos/${videoName}frames`);
+    fs.mkdirSync(Path.join(__dirname, `../videos/${videoName}frames`));
+
+    // defining the paths required
+    const videoPath = Path.join(
+      __dirname,
+      `../videos/${videoName}.${videoExtension}`
+    );
+
+    const videoFramesPath = Path.join(
+      __dirname,
+      `../videos/${videoName}frames/${videoName}%d.bmp`
+    );
+
+    const videoFramesDirPath = Path.join(
+      __dirname,
+      `../videos/${videoName}frames`
+    );
 
     // convert the video into bitmap frames
     cmd.runSync(
-      `ffmpeg -i ../videos/${
-        videoName + "." + videoExtension
-      } -vf fps=${fps} -pix_fmt bgr8 ../videos/${videoName}frames/${videoName}%d.bmp`
+      `ffmpeg -i "${videoPath}" -vf fps=${fps} -pix_fmt bgr8 "${videoFramesPath}"`
     );
 
     // getting the number of frames generated
-    const numberOfFrames = fs.readdirSync(
-      `../videos/${videoName}frames/`
-    ).length;
+    const numberOfFrames = fs.readdirSync(videoFramesDirPath).length;
 
     for (let i = 1; i <= numberOfFrames; i++) {
       // convert the bitmap frames into svgs using potrace
-      cmd.runSync(
-        `potrace ../videos/${videoName}frames/${videoName}${i}.bmp -b svg`
+      const framePath = Path.join(
+        __dirname,
+        `../videos/${videoName}frames/${videoName}${i}.bmp`
       );
+
+      cmd.runSync(`potrace "${framePath}" --opttolerance 0.1 -b svg `);
 
       // take the svg file, parse it and extract all the paths from the svg file
 
-      // extracting the contents of the svg file
-      const svgContent = fs.readFileSync(
-        `../videos/${videoName}frames/${videoName}${i}.svg`,
-        {
-          encoding: "utf-8",
-        }
+      const svgFilePath = Path.join(
+        __dirname,
+        `../videos/${videoName}frames/${videoName}${i}.svg`
       );
+      // extracting the contents of the svg file
+      const svgContent = fs.readFileSync(svgFilePath, {
+        encoding: "utf-8",
+      });
 
       frames[i] = [];
 
@@ -79,13 +109,30 @@ app.post("/convertVideo", upload.single("video"), async (req, res) => {
     }
 
     // delete the video and the frames once the processing is done
-    fs.rmSync(`../videos/${videoName + "." + videoExtension}`);
-    fs.rmSync(`../videos/${videoName}frames`, { recursive: true, force: true });
+    fs.rmSync(videoPath);
+    fs.rmSync(videoFramesDirPath, { recursive: true, force: true });
   } catch (e) {
     console.log(e);
   }
 
   res.send(frames);
+});
+
+app.post("/convertImage", uploadImage.single("image"), (req, res) => {
+  console.log(req.file);
+
+  // converting the image to svg
+  cmd.runSync(`potrace ../images/${req.file.originalname} -b svg`);
+
+  const imageFileName = req.file.originalname.split(".")[0];
+
+  const svgString = fs.readFileSync(`../images/${imageFileName}.svg`, {
+    encoding: "utf-8",
+  });
+
+  const parsedSvg = parse(svgString);
+
+  res.send(parsedSvg);
 });
 
 app.listen(PORT, () => {
