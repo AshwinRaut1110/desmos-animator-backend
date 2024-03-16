@@ -112,27 +112,57 @@ app.post("/convertVideo", uploadVideo.single("video"), async (req, res) => {
     fs.rmSync(videoPath);
     fs.rmSync(videoFramesDirPath, { recursive: true, force: true });
   } catch (e) {
-    console.log(e);
+    res.status(500).send({
+      error: {
+        message: e.message || "some error occurred, please try again",
+      },
+    });
   }
 
   res.send(frames);
 });
 
 app.post("/convertImage", uploadImage.single("image"), (req, res) => {
-  console.log(req.file);
+  const [imageName, imageExtention] = req.file.originalname.split(".");
+
+  // setting the paths required
+  const imagePath = Path.join(__dirname, `../images/${req.file.originalname}`);
+
+  const svgFilePath = Path.join(__dirname, `../images/${imageName}.svg`);
 
   // converting the image to svg
-  cmd.runSync(`potrace ../images/${req.file.originalname} -b svg`);
+  try {
+    cmd.runSync(`potrace "${imagePath}" -b svg`);
 
-  const imageFileName = req.file.originalname.split(".")[0];
+    // extract the content of the svg file and parse it
+    const svgString = fs.readFileSync(svgFilePath, {
+      encoding: "utf-8",
+    });
 
-  const svgString = fs.readFileSync(`../images/${imageFileName}.svg`, {
-    encoding: "utf-8",
-  });
+    const parsedSvg = parse(svgString);
 
-  const parsedSvg = parse(svgString);
+    // get the path tags from the parsed svg
+    const svgPathTags = parsedSvg.children[0].children[1].children;
 
-  res.send(parsedSvg);
+    const svgPaths = [];
+
+    // remove the \n from the path string and add them to the path string array
+    svgPathTags.forEach((svgPathTag) => {
+      svgPaths.push(svgPathTag.properties.d.replace(/\n/g, " "));
+    });
+
+    // delete the image files
+    fs.rmSync(imagePath, { recursive: true, force: true });
+    fs.rmSync(svgFilePath, { recursive: true, force: true });
+
+    res.send(svgPaths);
+  } catch (e) {
+    res.status(500).send({
+      error: {
+        message: e.message || "some error occurred, please try again",
+      },
+    });
+  }
 });
 
 app.listen(PORT, () => {
