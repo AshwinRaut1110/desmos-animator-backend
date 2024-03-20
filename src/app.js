@@ -38,6 +38,7 @@ const uploadImage = multer({ storage: storageImage });
 const PORT = 3000;
 
 app.post("/convertVideo", uploadVideo.single("video"), async (req, res) => {
+  console.log(req.file);
   // extracting the video name and extension
   const [videoName, videoExtension] = req.file.originalname.split(".");
 
@@ -111,6 +112,8 @@ app.post("/convertVideo", uploadVideo.single("video"), async (req, res) => {
     // delete the video and the frames once the processing is done
     fs.rmSync(videoPath);
     fs.rmSync(videoFramesDirPath, { recursive: true, force: true });
+
+    res.send(frames);
   } catch (e) {
     res.status(500).send({
       error: {
@@ -118,8 +121,6 @@ app.post("/convertVideo", uploadVideo.single("video"), async (req, res) => {
       },
     });
   }
-
-  res.send(frames);
 });
 
 app.post("/convertImage", uploadImage.single("image"), (req, res) => {
